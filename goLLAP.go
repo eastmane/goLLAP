@@ -2,7 +2,6 @@ package goLLAP
 
 import (
 	"fmt"
-	//	zmq "github.com/pebbe/zmq4"
 	"github.com/tarm/goserial"
 	"io"
 	"log"
@@ -13,31 +12,32 @@ import (
 
 var VALIDMESSAGES = [...]string{"AWAKE", "TMPA", "TMPB", "BATT", "BATTLOW", "SLEEPING", "STARTED", "ERROR", "APVER"}
 
-var sleepingDeviceMessages = make(map[string][]llapMessage)
+var sleepingDeviceMessages = make(map[string][]LLAPMessage)
 
 var mapMutex = &sync.Mutex{}
 
 var serialConfig *serial.Config
 var serialPort io.ReadWriteCloser
 
-type llapMessage struct {
-	deviceId     string
-	message      string
-	time         time.Time
-	messageType  string
-	messageValue string
+type LLAPMessage struct {
+	DeviceId     string
+	Message      string
+	Time         time.Time
+	MessageType  string
+	MessageValue string
 }
 
 func init() {
 	serialConfig = &serial.Config{Name: "/dev/ttyAMA0", Baud: 9600}
-	serialPort, err := serial.OpenPort(serialConfig)
+	var err error
+	serialPort, err = serial.OpenPort(serialConfig)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("serial opened")
 }
 
-func listen(llapMessages chan llapMessage) {
+func MessageListener(llapMessages chan LLAPMessage, sendMessages chan LLAPMessage) {
 	var rawMessage string
 	buf := make([]byte, 64)
 	for {
@@ -63,7 +63,7 @@ func listen(llapMessages chan llapMessage) {
 					messageValue = s.TrimRight(rawMessage[3+len(validMsgType):12], "-")
 				}
 			}
-			llapMessage := llapMessage{deviceId: deviceId, message: rawMessage, time: time.Now(), messageType: messageType, messageValue: messageValue}
+			llapMessage := LLAPMessage{DeviceId: deviceId, Message: rawMessage, Time: time.Now(), MessageType: messageType, MessageValue: messageValue}
 			llapMessages <- llapMessage
 			if messageType == "AWAKE" {
 				fmt.Println("Seen AWAKE")
@@ -86,25 +86,25 @@ func listen(llapMessages chan llapMessage) {
 	}
 }
 
-func messageSender(sendMessages chan llapMessage) {
+func MessageSender(sendMessages chan LLAPMessage) {
 	for {
 		sendMessage(<-sendMessages)
 	}
 }
 
-func sendMessage(message llapMessage) {
-	fmt.Println("Message: ", message.message)
-	serialPort.Write([]byte(message.message))
+func sendMessage(message LLAPMessage) {
+	fmt.Println("Message: ", message.Message)
+	serialPort.Write([]byte(message.Message))
 }
 
-func queueMessageForSleepingDevice(message llapMessage) {
+func QueueMessageForSleepingDevice(message LLAPMessage) {
 	mapMutex.Lock()
-	_, exists := sleepingDeviceMessages[message.deviceId]
+	_, exists := sleepingDeviceMessages[message.DeviceId]
 	if exists {
-		sleepingDeviceMessages[message.deviceId] = append(sleepingDeviceMessages[message.deviceId], message)
+		sleepingDeviceMessages[message.DeviceId] = append(sleepingDeviceMessages[message.DeviceId], message)
 	} else {
-		sleepingDeviceMessages[message.deviceId] = []llapMessage{message}
+		sleepingDeviceMessages[message.DeviceId] = []LLAPMessage{message}
 	}
-	fmt.Println("Queued: ", message.message)
+	fmt.Println("Queued: ", message.Message)
 	mapMutex.Unlock()
 }
