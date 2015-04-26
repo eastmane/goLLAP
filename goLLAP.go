@@ -1,7 +1,7 @@
 package goLLAP
 
 import (
-	"fmt"
+	//"fmt"
 	"github.com/tarm/goserial"
 	"io"
 	"log"
@@ -34,7 +34,7 @@ func init() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("serial opened")
+	//	fmt.Println("serial opened")
 }
 
 func MessageListener(llapMessages chan LLAPMessage, sendMessages chan LLAPMessage) {
@@ -44,7 +44,7 @@ func MessageListener(llapMessages chan LLAPMessage, sendMessages chan LLAPMessag
 		var remainingFragment string
 		n, _ := serialPort.Read(buf)
 		chunk := string(buf[:n])
-		fmt.Println("Raw: ", chunk)
+		//		fmt.Println("Raw: ", chunk)
 		if len(rawMessage) > 0 {
 			if 12-len(rawMessage) <= len(chunk) {
 				remainingFragment = chunk[12-len(rawMessage):]
@@ -66,7 +66,7 @@ func MessageListener(llapMessages chan LLAPMessage, sendMessages chan LLAPMessag
 			llapMessage := LLAPMessage{DeviceId: deviceId, Message: rawMessage, Time: time.Now(), MessageType: messageType, MessageValue: messageValue}
 			llapMessages <- llapMessage
 			if messageType == "AWAKE" {
-				fmt.Println("Seen AWAKE")
+				//fmt.Println("Seen AWAKE")
 				mapMutex.Lock()
 				queuedMessages, exists := sleepingDeviceMessages[deviceId]
 				if exists {
@@ -82,6 +82,8 @@ func MessageListener(llapMessages chan LLAPMessage, sendMessages chan LLAPMessag
 			} else {
 				rawMessage = ""
 			}
+		} else if a := s.Index(rawMessage, "a"); a > -1 {
+			rawMessage = rawMessage[a:]
 		}
 	}
 }
@@ -93,7 +95,7 @@ func MessageSender(sendMessages chan LLAPMessage) {
 }
 
 func sendMessage(message LLAPMessage) {
-	fmt.Println("Message: ", message.Message)
+	//	fmt.Println("Message: ", message.Message)
 	serialPort.Write([]byte(message.Message))
 }
 
@@ -105,6 +107,6 @@ func QueueMessageForSleepingDevice(message LLAPMessage) {
 	} else {
 		sleepingDeviceMessages[message.DeviceId] = []LLAPMessage{message}
 	}
-	fmt.Println("Queued: ", message.Message)
+	//	fmt.Println("Queued: ", message.Message)
 	mapMutex.Unlock()
 }
