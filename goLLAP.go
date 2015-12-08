@@ -33,8 +33,8 @@ type LLAPMessage struct {
 	MessageValue string
 }
 
-// NewGoLLAP sets up a new serial connection to the specified port
-func NewGoLLAP(serialPortName string) {
+// ConnectSerial sets up a new serial connection to the specified port ("/dev/ttyAMA0")
+func ConnectSerial(serialPortName string) {
 	serialConfig = &serial.Config{Name: serialPortName, Baud: 9600}
 	var err error
 	serialPort, err = serial.OpenPort(serialConfig)
