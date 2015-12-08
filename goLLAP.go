@@ -1,8 +1,13 @@
+/*
+Package goLLAP is a library for receiving and sending LLAP messages over serial
+
+http://openmicros.org/index.php/articles/85-llap-lightweight-local-automation-protocol/297-llap-reference
+
+*/
 package goLLAP
 
 import (
-	//"fmt"
-	"github.com/tarm/goserial"
+	"github.com/tarm/serial"
 	"io"
 	"log"
 	s "strings"
@@ -10,7 +15,7 @@ import (
 	"time"
 )
 
-var VALIDMESSAGES = [...]string{"AWAKE", "TMPA", "TMPB", "BATT", "BATTLOW", "SLEEPING", "STARTED", "ERROR", "APVER"}
+var validMessages = [...]string{"AWAKE", "TMPA", "TMPB", "BATT", "BATTLOW", "SLEEPING", "STARTED", "ERROR", "APVER"}
 
 var sleepingDeviceMessages = make(map[string][]LLAPMessage)
 
@@ -19,24 +24,30 @@ var mapMutex = &sync.Mutex{}
 var serialConfig *serial.Config
 var serialPort io.ReadWriteCloser
 
+//LLAPMessage is a generic LLAP Message
 type LLAPMessage struct {
-	DeviceId     string
+	DeviceID     string
 	Message      string
 	Time         time.Time
 	MessageType  string
 	MessageValue string
 }
 
-func init() {
-	serialConfig = &serial.Config{Name: "/dev/ttyAMA0", Baud: 9600}
+// NewGoLLAP sets up a new serial connection to the specified port
+func NewGoLLAP(serialPortName string) {
+	serialConfig = &serial.Config{Name: serialPortName, Baud: 9600}
 	var err error
 	serialPort, err = serial.OpenPort(serialConfig)
 	if err != nil {
 		log.Fatal(err)
 	}
-	//	fmt.Println("serial opened")
 }
 
+/*
+MessageListener listens for incoming LLAP messages, passing them to the llapMessages channel on receipt.
+
+If it gets an AWAKE message it will attempt to send any queued messages for that Device
+*/
 func MessageListener(llapMessages chan LLAPMessage, sendMessages chan LLAPMessage) {
 	var rawMessage string
 	buf := make([]byte, 64)
@@ -44,7 +55,6 @@ func MessageListener(llapMessages chan LLAPMessage, sendMessages chan LLAPMessag
 		var remainingFragment string
 		n, _ := serialPort.Read(buf)
 		chunk := string(buf[:n])
-		//		fmt.Println("Raw: ", chunk)
 		if len(rawMessage) > 0 {
 			if 12-len(rawMessage) <= len(chunk) {
 				remainingFragment = chunk[12-len(rawMessage):]
@@ -56,24 +66,23 @@ func MessageListener(llapMessages chan LLAPMessage, sendMessages chan LLAPMessag
 		if len(rawMessage) == 12 {
 			var messageType string
 			var messageValue string
-			deviceId := rawMessage[1:3]
-			for _, validMsgType := range VALIDMESSAGES {
+			deviceID := rawMessage[1:3]
+			for _, validMsgType := range validMessages {
 				if validMsgType == rawMessage[3:3+len(validMsgType)] {
 					messageType = validMsgType
 					messageValue = s.TrimRight(rawMessage[3+len(validMsgType):12], "-")
 				}
 			}
-			llapMessage := LLAPMessage{DeviceId: deviceId, Message: rawMessage, Time: time.Now(), MessageType: messageType, MessageValue: messageValue}
+			llapMessage := LLAPMessage{DeviceID: deviceID, Message: rawMessage, Time: time.Now(), MessageType: messageType, MessageValue: messageValue}
 			llapMessages <- llapMessage
 			if messageType == "AWAKE" {
-				//fmt.Println("Seen AWAKE")
 				mapMutex.Lock()
-				queuedMessages, exists := sleepingDeviceMessages[deviceId]
+				queuedMessages, exists := sleepingDeviceMessages[deviceID]
 				if exists {
 					for _, queuedMessage := range queuedMessages {
 						sendMessages <- queuedMessage
 					}
-					delete(sleepingDeviceMessages, deviceId)
+					delete(sleepingDeviceMessages, deviceID)
 				}
 				mapMutex.Unlock()
 			}
@@ -88,6 +97,7 @@ func MessageListener(llapMessages chan LLAPMessage, sendMessages chan LLAPMessag
 	}
 }
 
+// MessageSender sends messages sent to the sendMessages channel
 func MessageSender(sendMessages chan LLAPMessage) {
 	for {
 		sendMessage(<-sendMessages)
@@ -95,18 +105,17 @@ func MessageSender(sendMessages chan LLAPMessage) {
 }
 
 func sendMessage(message LLAPMessage) {
-	//	fmt.Println("Message: ", message.Message)
 	serialPort.Write([]byte(message.Message))
 }
 
+// QueueMessageForSleepingDevice adds a message to sleepingDeviceMessages which are then triggered when MessageListener sees an AWAKE message from the sleeping device. 
 func QueueMessageForSleepingDevice(message LLAPMessage) {
 	mapMutex.Lock()
-	_, exists := sleepingDeviceMessages[message.DeviceId]
+	_, exists := sleepingDeviceMessages[message.DeviceID]
 	if exists {
-		sleepingDeviceMessages[message.DeviceId] = append(sleepingDeviceMessages[message.DeviceId], message)
+		sleepingDeviceMessages[message.DeviceID] = append(sleepingDeviceMessages[message.DeviceID], message)
 	} else {
-		sleepingDeviceMessages[message.DeviceId] = []LLAPMessage{message}
+		sleepingDeviceMessages[message.DeviceID] = []LLAPMessage{message}
 	}
-	//	fmt.Println("Queued: ", message.Message)
 	mapMutex.Unlock()
 }
